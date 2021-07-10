@@ -1,86 +1,115 @@
-import numpy as np
-import random
-#Define functions that calculate the energy and the angular momentum of the system
-def E(r,vr,vphi):
-    '''Takes the radius, radial velocity and angular velocity at a given time and returns the energy.
-        r :radius
-        vr: radial velocity
-        vphi: angular velocity.
-        As the problem has axial symmetry, there is no need for the angular position.'''
-    T = 0.5 *(vr**2 + (r*vphi)**2)
-    U = alpha/r
-    return T+U
-
-def L(r,vphi):
-    '''Takes the radius and angular velocity at a given time and returns the angular momentum
-        r : radius
-        vphi: angular velocity'''
-    return r**2 * vphi
-
-def r(phi,p,e):
-    '''Takes the angular position, eccentricity and semi-latus rectum, returns the radial position
-    p : semi-latus rectum
-    e: eccenticity
-    phi:angular position
+#Define the differential equation that describes the newtonian dynamics.
+def ODE(q0):
     '''
-    r = p/(1-e*np.cos(phi))
-    return r
-
-#Define how the above variables are calculated.
-def dphi(vphi,dt):
-    '''Takes the instantaneous rate of change and the step size, returns the total change'''
-    return vphi * dt
-
-def r(phi,p,e):
-    '''Takes the angular position, eccentricity and semi-latus rectum, returns the radial position
-    p : semi-latus rectum
-    e: eccenticity
-    phi:angular position
+    ------------------------------------------
+    ODE(q0)
+    ------------------------------------------
+    ODEs system for the motion of a comet
+    around the Sun using cartesian coordinates
+    in the orbital plane.
+    ------------------------------------------
+    Arguments:
+    q0: NumPy array with the coordinates
+        defined as.
+    q0[0] = x: coordinate x.
+    q0[1] = y: coordinate y.
+    ------------------------------------------
+    Returns:
+    a = NumPy array with the components of the
+        acceleration.
     '''
-    r = p/(1-e*np.cos(phi))
-    return r
+    r2 = q0[0]**2 + q0[1]**2
+    a = - G*M*q0[0:2]/r2**(3/2)
+    return a
 
-def vphi(r,L):
-    '''takes  the angular momentum  and radius, uses the angular momentum definition
-    to obtain the angular velocity at a given r.
-    vphi : angular velocity
-    L : angular momentum
-    r: radius'''
-    return L/r**2
 
-def vr(r,phi,vphi,p,e):
-    '''Takes the radial and angular position, semi-latus rectum, eccentricity and the
-    angular velocity at a given time. Returns the radial velocity.
-    r: radial position
-    phi: angular position
-    vphi: angular velocity
-    p: semi-latus rectum
-    e: eccentricity
+#We will use a Velocity-Verlet integrator
+def VelocityVerletIntegrator(ODE,q):
     '''
-    return 1/p * r**2 * e * np.sin(phi) * vphi
+    ---------------------------------
+    VelocityVerletIntegrator(ODE,q)
+    ---------------------------------
+    Uses a velocity Verlet integrator
+    to obtain the velocity
+    and position at the next step.
+    ---------------------------------
+    Arguments:
+    ODE: Force function.
+    q: numpy array with the state of
+        the system in the order.
+    q[0] = x: x coordinate.
+    q[1] = y: y coordinate.
+    q[2] = vx: velocity in x.
+    q[3] = vy: velocity in y.
+    ---------------------------------
+    Returns:
+    qNew: Numpy array with the updated state.
+    '''
+    qNew = np.zeros((1,4)) #here will be the information of the new state
+    #Calculate the new acceleration vector at t
+    a0 = ODE(q) #Acceleration vector at t
+    #Obtain the position at t+dt
+    qNew[0:2] = q[0:2] + dt *q[2:4] + 0.5*a*dt**2
+    #Calculate the acceleration at t+dt
+    a1 = ODE(qNew)
+    #Calculate the velocity at t+dt
+    qNew[2:4] = q[2:4] + (a0+a1)/2 * dt
+    return qNew
 
-#Define the function that updates the state of the system
-def updateState(q,dt):
-    '''Takes as input an array and a time step. Returns the updated state of the system
-    as an array'''
-    qUpdated = np.zeros(4)
-    #Calculate the new phi
-    phiNew = dphi(q[3],dt) + q[1]
-    qUpdated[1] = phiNew
-    #Calculate the new r
-    rNew = r(q[1],p,e)
-    qUpdated[0] = rNew
-    #New phi dot
-    vphiNew = vphi(rNew,L)
-    qUpdated[3] = vphiNew
-    #New r dot
-    vrNew = vr(rNew,phiNew,vphiNew,p,e)
-    qUpdated[2] = vrNew
-    return qUpdated
+#Define the model for the emision of energy and angular momentum.
+def EmissionModel(q,dE,dL):
+    '''
+    -----------------------------------
+    EmissionModel(q,dE,dL)
+    -----------------------------------
+    Models the change in velocity after
+    an emission of both energy and
+    angular momentum. The details
+    of the model and the derivation of the
+    emission matrix can be found in the
+    document emissionModel.pdf, in the
+    theory directory of the repository.
+    -----------------------------------
+    Arguments:
+    q: numpy array with the state of
+        the system in the order.
+    q[0] = x: x coordinate.
+    q[1] = y: y coordinate.
+    q[2] = vx: velocity in x.
+    q[3] = vy: velocity in y.
+    dE: change in energy i.e. energy emited.
+    dL: change in angular momentum
+        i.e. angular momentum emited.
+    -----------------------------------
+    Returns:
+    qNew: numpy array with the updated state
+    '''
+    #Where the information of the updated state will be
+    qNew = np.zeros((1,4))
+    qNew[0:2] = q[0:2]
+    #Define the emission matrix
+    sigma = x*vx + y*vy
+    R = np.array([[[x,-vy],[y,vx]]])
+    A = 1/b *R #Emission matrix
+    b = np.array([dE,dL]) #Emission vector
+    #Update the velocities
+    qNew[2:4] = A*b
+    return qNew
 
-#Define how to pass from polar to cartesian
-def polarToCartesian(r,theta):
-    '''Takes as input polar coordinates and returns cartesian coordinates'''
-    x = np.cos(theta) * r
-    y = np.cos(theta) * r
-    return x,y
+def qij(q):
+  '''
+  ------------------------------------------------------
+  qij(q)
+  ------------------------------------------------------
+  Returns the components of the 3x3 quadrupole tensor
+  ------------------------------------------------------
+  Arguments:
+  q: numpy array with the state of
+      the system in the order.
+  q[0] = x: x coordinate.
+  q[1] = y: y coordinate.
+  q[2] = vx: velocity in x.
+  q[3] = vy: velocity in y.
+
+  '''
+  return mu*(np.outer(x,x) - np.identity(3)*np.dot(x,x)/3)
